@@ -45,6 +45,8 @@ function mr_get_settings() {
     'min_notice_hours' => 0,
     'closures' => "",
     'extra_open' => "",
+    'recaptcha_site_key' => "",
+    'recaptcha_secret_key' => "",
   ];
 
   $s = get_option(MR_OPT, []);
@@ -137,6 +139,9 @@ function mr_sanitize_settings($in) {
   $extra = preg_replace("/\r\n|\r/", "\n", trim($extra));
   $out['extra_open'] = function_exists('mr_normalize_lines_dates') ? mr_normalize_lines_dates($extra) : $extra;
 
+  $out['recaptcha_site_key'] = sanitize_text_field($in['recaptcha_site_key'] ?? '');
+  $out['recaptcha_secret_key'] = sanitize_text_field($in['recaptcha_secret_key'] ?? '');
+
   return $out;
 }
 
@@ -159,7 +164,7 @@ add_action('wp_enqueue_scripts', function() {
   $closedDates = function_exists('mr_parse_dates_list') ? array_values(mr_parse_dates_list($s['closures'])) : [];
   $extraDates  = function_exists('mr_parse_dates_list') ? array_values(mr_parse_dates_list($s['extra_open'])) : [];
 
-  wp_localize_script($handle, 'MR', [
+  $mr_data = [
     'ajax'           => admin_url('admin-ajax.php'),
     'nonce'          => wp_create_nonce('mr_nonce'),
     'maxAtt'         => (string)($s['max_attendees'] ?? 5),
@@ -171,7 +176,16 @@ add_action('wp_enqueue_scripts', function() {
     // ✅ compat: antes era "extraOpen", ahora también enviamos "extraOpenDates"
     'extraOpen'      => $extraDates,
     'extraOpenDates' => $extraDates,
-  ]);
+  ];
+
+  // reCAPTCHA v3
+  $rc_site_key = trim($s['recaptcha_site_key'] ?? '');
+  if ($rc_site_key !== '') {
+    $mr_data['recaptchaSiteKey'] = $rc_site_key;
+    wp_enqueue_script('google-recaptcha', 'https://www.google.com/recaptcha/api.js?render=' . urlencode($rc_site_key), [], null, true);
+  }
+
+  wp_localize_script($handle, 'MR', $mr_data);
 }, 20);
 
 /**
@@ -307,6 +321,20 @@ function mr_settings_page() {
       <h2>Cierres puntuales</h2>
       <p>Una por línea. Admite <strong>DD-MM-YYYY</strong> o <strong>YYYY-MM-DD</strong>.</p>
       <textarea rows="6" style="width:100%;max-width:900px;" name="<?php echo esc_attr(MR_OPT); ?>[closures]"><?php echo esc_textarea($s['closures']); ?></textarea>
+
+      <h2>reCAPTCHA v3</h2>
+      <p>Añade protección anti-spam invisible. <a href="https://www.google.com/recaptcha/admin" target="_blank" rel="noopener">Obtener claves</a> (selecciona reCAPTCHA v3).</p>
+      <table class="form-table" role="presentation">
+        <tr>
+          <th scope="row">Site Key</th>
+          <td><input type="text" style="width:100%;max-width:500px;" name="<?php echo esc_attr(MR_OPT); ?>[recaptcha_site_key]" value="<?php echo esc_attr($s['recaptcha_site_key'] ?? ''); ?>"></td>
+        </tr>
+        <tr>
+          <th scope="row">Secret Key</th>
+          <td><input type="text" style="width:100%;max-width:500px;" name="<?php echo esc_attr(MR_OPT); ?>[recaptcha_secret_key]" value="<?php echo esc_attr($s['recaptcha_secret_key'] ?? ''); ?>"></td>
+        </tr>
+      </table>
+      <p class="description">Si se dejan vacías, el formulario funciona sin reCAPTCHA.</p>
 
       <?php submit_button(); ?>
     </form>

@@ -184,6 +184,30 @@ function mr_ajax_make_booking() {
   check_ajax_referer('mr_nonce', 'nonce');
   $s = mr_get_settings();
 
+  // reCAPTCHA v3 verification
+  $rc_secret = trim($s['recaptcha_secret_key'] ?? '');
+  if ($rc_secret !== '') {
+    $rc_token = sanitize_text_field($_POST['recaptcha_token'] ?? '');
+    if (!$rc_token) {
+      wp_send_json_error(['message' => 'Falta la verificación de seguridad. Recarga la página e inténtalo de nuevo.']);
+    }
+    $rc_response = wp_remote_post('https://www.google.com/recaptcha/api/siteverify', [
+      'body' => [
+        'secret'   => $rc_secret,
+        'response' => $rc_token,
+        'remoteip' => $_SERVER['REMOTE_ADDR'] ?? '',
+      ],
+      'timeout' => 10,
+    ]);
+    if (is_wp_error($rc_response)) {
+      wp_send_json_error(['message' => 'Error al verificar la seguridad. Inténtalo de nuevo.']);
+    }
+    $rc_body = json_decode(wp_remote_retrieve_body($rc_response), true);
+    if (empty($rc_body['success']) || ($rc_body['score'] ?? 0) < 0.5) {
+      wp_send_json_error(['message' => 'Verificación de seguridad fallida. Si el problema persiste, contacta con nosotros.']);
+    }
+  }
+
   if (isset($_POST['companions']) && is_string($_POST['companions'])) {
     $decoded = json_decode(stripslashes($_POST['companions']), true);
     if (is_array($decoded)) $_POST['companions'] = $decoded;

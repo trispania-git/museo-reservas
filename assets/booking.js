@@ -559,7 +559,20 @@
 
         if (submitBtn) submitBtn.textContent = 'Reservando...';
 
-        const res = await post('mr_make_booking', {
+        // reCAPTCHA v3 (invisible)
+        let recaptchaToken = '';
+        const rcSiteKey = window.MR?.recaptchaSiteKey || '';
+        if (rcSiteKey && typeof grecaptcha !== 'undefined') {
+          try {
+            recaptchaToken = await grecaptcha.execute(rcSiteKey, { action: 'booking' });
+          } catch (err) {
+            console.error('[MR] reCAPTCHA error:', err);
+            msg('err', 'Error en la verificación de seguridad. Recarga la página e inténtalo de nuevo.');
+            return;
+          }
+        }
+
+        const postData = {
           date,
           time,
           attendees: String(attendees),
@@ -570,7 +583,10 @@
           req_email,
           companions: JSON.stringify(companions),
           privacy: '1'
-        });
+        };
+        if (recaptchaToken) postData.recaptcha_token = recaptchaToken;
+
+        const res = await post('mr_make_booking', postData);
 
         if (!res || !res.success){
           msg('err', getErrMsg(res, 'No se pudo completar la reserva.'));
