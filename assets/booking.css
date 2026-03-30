@@ -1,0 +1,222 @@
+/* =========================================
+   Museo Reservas (booking.css) — SCOPED
+   Todo lo de este fichero SOLO afecta
+   al bloque del plugin dentro de .mr-wrap
+========================================= */
+
+.mr-wrap{
+  max-width:900px;
+  border:1px solid #e6e6e6;
+  border-radius:14px;
+  padding:18px;
+
+  /* ✅ NO fuerces tipografías: hereda del tema */
+  font-family: inherit;
+  color: inherit;
+}
+
+/* ✅ Asegura que inputs/botones hereden la fuente del tema */
+.mr-wrap input,
+.mr-wrap select,
+.mr-wrap button{
+  font: inherit;
+  color: inherit;
+}
+
+/* Título */
+.mr-wrap .mr-title{
+  margin:0 0 10px 0;
+}
+
+/* Filas y campos */
+.mr-wrap .mr-row{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+  margin:10px 0;
+}
+
+.mr-wrap .mr-field{
+  flex:1;
+  min-width:260px;
+}
+
+.mr-wrap .mr-field label{
+  display:block;
+  font-weight:600;
+  margin:0 0 6px 0;
+}
+
+/* Inputs y selects (solo dentro del plugin) */
+.mr-wrap .mr-field input,
+.mr-wrap .mr-field select{
+  width:100% !important;
+  max-width:100% !important;
+  box-sizing:border-box !important;
+  padding:10px !important;
+  border:1px solid #dcdcdc !important;
+  border-radius:10px !important;
+  margin:0 !important;
+  background:#fff;
+}
+
+/* Campo fecha con botón dentro */
+.mr-wrap .mr-datefield{
+  position:relative !important;
+  width:100% !important;
+}
+
+.mr-wrap .mr-datefield input{
+  padding-right:46px !important; /* deja hueco para el botón */
+}
+
+.mr-wrap .mr-datebtn{
+  position:absolute !important;
+  right:8px !important;
+  top:50% !important;
+  transform:translateY(-50%) !important;
+
+  width:32px !important;
+  height:32px !important;
+  border:1px solid #dcdcdc !important;
+  border-radius:10px !important;
+  background:#fff !important;
+  cursor:pointer !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  padding:0 !important;
+  margin:0 !important;
+  line-height:1 !important;
+  font-size:16px !important;
+}
+
+/* Textos auxiliares */
+.mr-wrap .mr-hint,
+.mr-wrap .mr-small{
+  font-size:12px;
+  opacity:.75;
+  margin-top:6px;
+}
+
+/* Sesiones */
+.mr-wrap .mr-sessions{ margin-top:14px; }
+
+.mr-wrap .mr-times{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+/* Botones de sesión (por si se usan) */
+.mr-wrap .mr-time{
+  border:1px solid #dcdcdc;
+  border-radius:10px;
+  background:#fff;
+  padding:10px 12px;
+  cursor:pointer;
+}
+
+.mr-wrap .mr-time[disabled]{
+  opacity:.5;
+  cursor:not-allowed;
+}
+
+.mr-wrap .mr-time.is-selected{
+  border-color:#111;
+}
+
+/* Pills de sesiones (#mr_times) */
+.mr-wrap #mr_times{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:10px;
+}
+
+.mr-wrap .mr-timepill{
+  border:1px solid #ddd;
+  border-radius:12px;
+  padding:10px 12px;
+  background:#fff;
+  cursor:pointer;
+  display:inline-flex;
+  gap:8px;
+  align-items:center;
+}
+
+.mr-wrap .mr-timepill .mr-rem{
+  opacity:.75;
+  font-size:.9em;
+}
+
+.mr-wrap .mr-timepill.is-active{
+  border-color:#111;
+  box-shadow:0 0 0 2px rgba(0,0,0,.08);
+}
+
+.mr-wrap .mr-timepill:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+/* Botón principal */
+.mr-wrap .mr-btn{
+  margin-top:14px;
+  padding:12px 14px;
+  border:0;
+  border-radius:16px; /* más redondito */
+  background:#111;
+  color:#fff;
+  cursor:pointer;
+}
+
+.mr-wrap .mr-btn:hover{
+  filter:brightness(1.05);
+}
+
+.mr-wrap .mr-btn:active{
+  transform:translateY(1px);
+}
+
+/* Mensajes */
+.mr-wrap .mr-msg{
+  margin-top:12px;
+  padding:10px;
+  border-radius:10px;
+}
+
+.mr-wrap .mr-msg.ok{
+  background:#eefbf0;
+  border:1px solid #bfe7c6;
+}
+
+.mr-wrap .mr-msg.err{
+  background:#fff1f1;
+  border:1px solid #f0b8b8;
+}
+
+/* ✅ Privacidad: alinea checkbox y texto (y evita “salto raro”) */
+.mr-wrap #mr_privacy{
+  width:18px;
+  height:18px;
+  margin:3px 10px 0 0 !important;
+  flex:0 0 auto;
+}
+
+.mr-wrap #mr_privacy + span{
+  font-size:14px;
+  line-height:1.35;
+}
+
+/* =========================================
+   Flatpickr (ojo: afecta a cualquier flatpickr)
+   Si en tu web hay más flatpickr y no quieres
+   tocarles, dímelo y lo “scopamos” también
+   con 2 líneas en booking.js.
+========================================= */
+.flatpickr-day.disabled,
+.flatpickr-day.disabled:hover{
+  opacity:.35;
+  cursor:not-allowed;
+}
