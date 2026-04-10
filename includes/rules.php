@@ -180,6 +180,24 @@ function mr_slot_is_closed($date, $time, $s) {
 }
 
 /**
+ * Comprueba si una fecha está bloqueada (no se permiten nuevas reservas).
+ */
+function mr_date_is_blocked($date, $s) {
+  $date = trim((string)$date);
+  if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return false;
+
+  $blocked = preg_replace("/\r\n|\r/", "\n", (string)($s['blocked_dates'] ?? ''));
+  $lines = preg_split("/\n/", trim($blocked));
+
+  foreach ($lines as $line) {
+    $line = trim($line);
+    if ($line === $date) return true;
+  }
+
+  return false;
+}
+
+/**
  * ✅ Función que faltaba (y causaba el 500):
  * Plazas restantes para un pase = capacity - suma asistentes confirmados.
  * Además respeta min_notice_hours: si el pase está "demasiado cerca", devuelve 0.
@@ -193,6 +211,9 @@ function mr_remaining_for_slot($date, $time, $s) {
 
   // Si ese pase está cerrado, no hay plazas
   if (mr_slot_is_closed($date, $time, $s)) return 0;
+
+  // Si la fecha está bloqueada, no se permiten más reservas
+  if (mr_date_is_blocked($date, $s)) return 0;
 
   // Antelación mínima
   $min_notice = intval($s['min_notice_hours'] ?? 0);

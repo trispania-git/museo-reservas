@@ -49,6 +49,7 @@ function mr_get_settings() {
     'recaptcha_secret_key' => "",
     'capacity_by_day' => ['0'=>'','1'=>'','2'=>'','3'=>'','4'=>'','5'=>'','6'=>''],
     'box_bg_color' => '#f5f5f5',
+    'blocked_dates' => "",
   ];
 
   $s = get_option(MR_OPT, []);
@@ -143,6 +144,10 @@ function mr_sanitize_settings($in) {
   $extra = preg_replace("/\r\n|\r/", "\n", trim($extra));
   $out['extra_open'] = function_exists('mr_normalize_lines_dates') ? mr_normalize_lines_dates($extra) : $extra;
 
+  $blocked = (string)($in['blocked_dates'] ?? '');
+  $blocked = preg_replace("/\r\n|\r/", "\n", trim($blocked));
+  $out['blocked_dates'] = function_exists('mr_normalize_lines_dates') ? mr_normalize_lines_dates($blocked) : $blocked;
+
   $out['recaptcha_site_key'] = sanitize_text_field($in['recaptcha_site_key'] ?? '');
   $out['recaptcha_secret_key'] = sanitize_text_field($in['recaptcha_secret_key'] ?? '');
 
@@ -205,8 +210,12 @@ add_action('wp_enqueue_scripts', function() {
   }
 
   // ✅ listas para JS (solo YYYY-MM-DD)
-  $closedDates = function_exists('mr_parse_dates_list') ? array_values(mr_parse_dates_list($s['closures'])) : [];
-  $extraDates  = function_exists('mr_parse_dates_list') ? array_values(mr_parse_dates_list($s['extra_open'])) : [];
+  $closedDates  = function_exists('mr_parse_dates_list') ? array_values(mr_parse_dates_list($s['closures'])) : [];
+  $blockedDates = function_exists('mr_parse_dates_list') ? array_values(mr_parse_dates_list($s['blocked_dates'] ?? '')) : [];
+  $extraDates   = function_exists('mr_parse_dates_list') ? array_values(mr_parse_dates_list($s['extra_open'])) : [];
+
+  // Bloqueados se mezclan con cerrados para deshabilitar en el calendario
+  $closedDates = array_values(array_unique(array_merge($closedDates, $blockedDates)));
 
   $mr_data = [
     'ajax'           => admin_url('admin-ajax.php'),
@@ -369,6 +378,10 @@ function mr_settings_page() {
         </tbody>
       </table>
       <p class="description">Deja vacío para usar el aforo general (<?php echo esc_html($s['capacity']); ?>).</p>
+
+      <h2>Bloqueo de días</h2>
+      <p>No se permitirán más reservas en estas fechas (las reservas existentes se mantienen). Una por línea. Admite <strong>DD-MM-YYYY</strong> o <strong>YYYY-MM-DD</strong>.</p>
+      <textarea rows="6" style="width:100%;max-width:900px;" name="<?php echo esc_attr(MR_OPT); ?>[blocked_dates]"><?php echo esc_textarea($s['blocked_dates'] ?? ''); ?></textarea>
 
       <h2>Fechas extra de apertura</h2>
       <p>Una por línea. Admite <strong>DD-MM-YYYY</strong> o <strong>YYYY-MM-DD</strong>.</p>
