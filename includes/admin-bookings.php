@@ -41,6 +41,9 @@ function mr_admin_bookings_page() {
   $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
   $date_to   = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
 
+  // Filtro de sesión (fecha + hora)
+  $session_filter = isset($_GET['session']) ? sanitize_text_field($_GET['session']) : '';
+
   // ✅ Nuevo: filtro de estado
   // confirmed (por defecto), cancelled, all
   $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'confirmed';
@@ -52,16 +55,27 @@ function mr_admin_bookings_page() {
     if ($date_to   && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to))   $date_to   = mr_norm_date_to_iso($date_to);
   }
 
+  // Obtener sesiones únicas (fecha + hora) para el desplegable
+  $sessions_sql = "SELECT DISTINCT slot_date, slot_time FROM {$table} ORDER BY slot_date DESC, slot_time ASC";
+  $sessions_rows = $wpdb->get_results($sessions_sql, ARRAY_A);
+
   $where = "WHERE 1=1";
   $params = [];
 
-  if ($date_from && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
-    $where .= " AND slot_date >= %s";
-    $params[] = $date_from;
-  }
-  if ($date_to && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
-    $where .= " AND slot_date <= %s";
-    $params[] = $date_to;
+  // Filtro de sesión tiene prioridad sobre fecha desde/hasta
+  if ($session_filter && preg_match('/^(\d{4}-\d{2}-\d{2})\|(.+)$/', $session_filter, $sm)) {
+    $where .= " AND slot_date = %s AND slot_time = %s";
+    $params[] = $sm[1];
+    $params[] = $sm[2];
+  } else {
+    if ($date_from && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+      $where .= " AND slot_date >= %s";
+      $params[] = $date_from;
+    }
+    if ($date_to && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+      $where .= " AND slot_date <= %s";
+      $params[] = $date_to;
+    }
   }
 
   // ✅ Aplicar filtro estado
@@ -92,12 +106,13 @@ function mr_admin_bookings_page() {
 
   $nonce = wp_create_nonce('mr_export_csv');
 
-  // ✅ Export respetando filtros (incluye status)
+  // ✅ Export respetando filtros (incluye status y sesión)
   $export_url = admin_url('admin-post.php?action=mr_export_csv')
     . '&_wpnonce=' . urlencode($nonce)
     . '&date_from=' . urlencode($date_from)
     . '&date_to=' . urlencode($date_to)
-    . '&status=' . urlencode($status_filter);
+    . '&status=' . urlencode($status_filter)
+    . '&session=' . urlencode($session_filter);
 
   ?>
   <div class="wrap">
@@ -120,6 +135,21 @@ function mr_admin_bookings_page() {
       <label style="margin-left:10px;">Hasta:
         <input type="text" name="date_to" value="<?php echo esc_attr($date_to ? mr_admin_fmt_date_es($date_to) : ''); ?>"
                placeholder="DD-MM-YYYY" style="width:190px;">
+      </label>
+
+      <!-- Filtro por sesión -->
+      <label style="margin-left:10px;">Sesión:
+        <select name="session">
+          <option value="">— Todas —</option>
+          <?php foreach ($sessions_rows as $sr):
+            $val = $sr['slot_date'] . '|' . $sr['slot_time'];
+            $label = mr_admin_fmt_date_es($sr['slot_date']) . ' / ' . $sr['slot_time'];
+          ?>
+            <option value="<?php echo esc_attr($val); ?>" <?php selected($session_filter, $val); ?>>
+              <?php echo esc_html($label); ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
       </label>
 
       <!-- ✅ Nuevo selector de estado -->
@@ -190,7 +220,8 @@ function mr_admin_bookings_page() {
                 'page' => 'museo-reservas-bookings',
                 'date_from' => $date_from,
                 'date_to' => $date_to,
-                'status' => $status_filter, // ✅ mantener estado al volver
+                'session' => $session_filter,
+                'status' => $status_filter,
                 'paged' => $page,
               ];
 
@@ -253,7 +284,8 @@ function mr_admin_bookings_page() {
           'page' => 'museo-reservas-bookings',
           'date_from' => $date_from,
           'date_to' => $date_to,
-          'status' => $status_filter, // ✅ mantener estado en paginación
+          'session' => $session_filter,
+          'status' => $status_filter,
         ];
     ?>
       <div style="margin-top:12px;">
@@ -297,6 +329,7 @@ function mr_admin_cancel_booking() {
     'page' => 'museo-reservas-bookings',
     'date_from' => sanitize_text_field($_GET['date_from'] ?? ''),
     'date_to' => sanitize_text_field($_GET['date_to'] ?? ''),
+    'session' => sanitize_text_field($_GET['session'] ?? ''),
     'status' => sanitize_text_field($_GET['status'] ?? 'confirmed'),
     'paged' => max(1, intval($_GET['paged'] ?? 1)),
     'mr_notice' => $notice,
@@ -330,6 +363,7 @@ function mr_admin_delete_booking() {
     'page' => 'museo-reservas-bookings',
     'date_from' => sanitize_text_field($_GET['date_from'] ?? ''),
     'date_to' => sanitize_text_field($_GET['date_to'] ?? ''),
+    'session' => sanitize_text_field($_GET['session'] ?? ''),
     'status' => sanitize_text_field($_GET['status'] ?? 'confirmed'),
     'paged' => max(1, intval($_GET['paged'] ?? 1)),
     'mr_notice' => $notice,
@@ -353,6 +387,7 @@ function mr_export_csv() {
 
   $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
   $date_to   = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
+  $session_filter = isset($_GET['session']) ? sanitize_text_field($_GET['session']) : '';
   $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'confirmed';
   if (!in_array($status_filter, ['confirmed','cancelled','all'], true)) $status_filter = 'confirmed';
 
@@ -364,13 +399,19 @@ function mr_export_csv() {
   $where = "WHERE 1=1";
   $params = [];
 
-  if ($date_from && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
-    $where .= " AND slot_date >= %s";
-    $params[] = $date_from;
-  }
-  if ($date_to && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
-    $where .= " AND slot_date <= %s";
-    $params[] = $date_to;
+  if ($session_filter && preg_match('/^(\d{4}-\d{2}-\d{2})\|(.+)$/', $session_filter, $sm)) {
+    $where .= " AND slot_date = %s AND slot_time = %s";
+    $params[] = $sm[1];
+    $params[] = $sm[2];
+  } else {
+    if ($date_from && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+      $where .= " AND slot_date >= %s";
+      $params[] = $date_from;
+    }
+    if ($date_to && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+      $where .= " AND slot_date <= %s";
+      $params[] = $date_to;
+    }
   }
 
   if ($status_filter === 'confirmed' || $status_filter === 'cancelled') {
