@@ -319,10 +319,9 @@ function mr_ajax_make_booking() {
     'slot_time' => $time,
     'capacity'  => (function() use ($date, $s) {
       $dow = (string)date('w', strtotime($date));
-      $day_cap = $s['capacity_by_day'][$dow] ?? '';
-      return ($day_cap !== '' && $day_cap !== null && (string)$day_cap !== '')
-        ? intval($day_cap)
-        : intval($s['capacity']);
+      $day_cap = isset($s['capacity_by_day'][$dow]) ? $s['capacity_by_day'][$dow] : '';
+      $has = ($day_cap !== '' && $day_cap !== null && (string)$day_cap !== '' && (string)$day_cap !== '0' && intval($day_cap) > 0);
+      return $has ? intval($day_cap) : intval($s['capacity']);
     })(),
     'attendees' => $att,
     'req_first_name' => $req_first,
