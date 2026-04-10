@@ -176,6 +176,9 @@ function mr_ajax_get_availability() {
     'day_capacity_raw' => $day_cap,
     'day_capacity_type' => gettype($day_cap),
     'blocked_dates' => $s['blocked_dates'] ?? '',
+    'times_by_day_raw' => $s['times_by_day'][$dow] ?? 'NOT_SET',
+    'times_by_day_all' => $s['times_by_day'],
+    'days_open' => $s['days_open'],
   ];
 
   if (!mr_is_date_open($date, $s)) {
