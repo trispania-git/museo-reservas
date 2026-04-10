@@ -3,7 +3,7 @@
  * Plugin Name: Museo Reservas
  * Plugin URI: https://welowmarketing.com/
  * Description: Reservas Sala Hisrírica Guardia Real 
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Welow Marketing
  * Author URI: https://welowmarketing.com/
  * License: GPLv2 or later
@@ -12,7 +12,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MR_VERSION', '1.0.0');
+define('MR_VERSION', '1.1.0');
 define('MR_PATH', plugin_dir_path(__FILE__));
 define('MR_URL', plugin_dir_url(__FILE__));
 define('MR_OPT', 'mr_settings');
