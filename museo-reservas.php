@@ -48,6 +48,7 @@ function mr_get_settings() {
     'recaptcha_site_key' => "",
     'recaptcha_secret_key' => "",
     'capacity_by_day' => ['0'=>'','1'=>'','2'=>'','3'=>'','4'=>'','5'=>'','6'=>''],
+    'box_bg_color' => '#f5f5f5',
   ];
 
   $s = get_option(MR_OPT, []);
@@ -144,6 +145,10 @@ function mr_sanitize_settings($in) {
 
   $out['recaptcha_site_key'] = sanitize_text_field($in['recaptcha_site_key'] ?? '');
   $out['recaptcha_secret_key'] = sanitize_text_field($in['recaptcha_secret_key'] ?? '');
+
+  // Color de fondo del shortcode
+  $box_bg = sanitize_hex_color($in['box_bg_color'] ?? '#f5f5f5');
+  $out['box_bg_color'] = $box_bg ?: '#f5f5f5';
 
   // Aforo por día de la semana
   $cbd_in = (array)($in['capacity_by_day'] ?? []);
@@ -305,6 +310,10 @@ function mr_settings_page() {
         <tr>
           <th scope="row">Aforo por sesión</th>
           <td><input type="number" min="1" name="<?php echo esc_attr(MR_OPT); ?>[capacity]" value="<?php echo esc_attr($s['capacity']); ?>"></td>
+        </tr>
+        <tr>
+          <th scope="row">Color de fondo del formulario</th>
+          <td><input type="text" name="<?php echo esc_attr(MR_OPT); ?>[box_bg_color]" value="<?php echo esc_attr($s['box_bg_color'] ?? '#f5f5f5'); ?>" placeholder="#f5f5f5" style="width:120px;"> <p class="description">Código HEX (ej: #f5f5f5). Vacío = gris claro.</p></td>
         </tr>
         <tr>
           <th scope="row">Máximo asistentes por reserva</th>

@@ -70,8 +70,10 @@ function mr_is_valid_id_simple($value) {
 }
 
 function mr_shortcode() {
+  $s = mr_get_settings();
+  $bg = esc_attr($s['box_bg_color'] ?? '#f5f5f5');
   ob_start(); ?>
-  <div class="mr-wrap">
+  <div class="mr-wrap" style="background:<?php echo $bg; ?>">
     <h3 class="mr-title">Reserva tu visita</h3>
 
     <div class="mr-row">
