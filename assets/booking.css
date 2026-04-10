@@ -209,6 +209,22 @@
   line-height:1.35;
 }
 
+/* Mensaje de grupo (+6) */
+.mr-wrap .mr-group-msg{
+  border:1px solid #e6e6e6;
+  border-radius:14px;
+  padding:18px;
+  background:#fff;
+  margin:14px 0;
+  line-height:1.5;
+}
+
+.mr-wrap .mr-group-msg .mr-btn{
+  display:inline-block;
+  margin-top:12px;
+  text-decoration:none;
+}
+
 /* =========================================
    Flatpickr (ojo: afecta a cualquier flatpickr)
    Si en tu web hay más flatpickr y no quieres

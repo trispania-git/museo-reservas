@@ -50,6 +50,8 @@ function mr_get_settings() {
     'capacity_by_day' => ['0'=>'','1'=>'','2'=>'','3'=>'','4'=>'','5'=>'','6'=>''],
     'box_bg_color' => '#f5f5f5',
     'blocked_dates' => "",
+    'group_text' => 'Para visitas de grupos de más de 6 personas, deberá descargar, rellenar y remitir el impreso a la dirección de correo electrónico que encontrará al final del documento.',
+    'group_file_url' => "",
   ];
 
   $s = get_option(MR_OPT, []);
@@ -147,6 +149,10 @@ function mr_sanitize_settings($in) {
   $blocked = (string)($in['blocked_dates'] ?? '');
   $blocked = preg_replace("/\r\n|\r/", "\n", trim($blocked));
   $out['blocked_dates'] = function_exists('mr_normalize_lines_dates') ? mr_normalize_lines_dates($blocked) : $blocked;
+
+  // Grupos (+6 personas)
+  $out['group_text'] = wp_kses_post($in['group_text'] ?? '');
+  $out['group_file_url'] = esc_url_raw($in['group_file_url'] ?? '');
 
   $out['recaptcha_site_key'] = sanitize_text_field($in['recaptcha_site_key'] ?? '');
   $out['recaptcha_secret_key'] = sanitize_text_field($in['recaptcha_secret_key'] ?? '');
@@ -390,6 +396,28 @@ function mr_settings_page() {
       <h2>Cierres puntuales</h2>
       <p>Una por línea. Admite <strong>DD-MM-YYYY</strong> o <strong>YYYY-MM-DD</strong>.</p>
       <textarea rows="6" style="width:100%;max-width:900px;" name="<?php echo esc_attr(MR_OPT); ?>[closures]"><?php echo esc_textarea($s['closures']); ?></textarea>
+
+      <h2>Grupos (+6 personas)</h2>
+      <table class="form-table" role="presentation">
+        <tr>
+          <th scope="row">Texto informativo</th>
+          <td>
+            <textarea rows="4" style="width:100%;max-width:600px;"
+              name="<?php echo esc_attr(MR_OPT); ?>[group_text]"><?php echo esc_textarea($s['group_text'] ?? ''); ?></textarea>
+            <p class="description">Texto que se muestra al seleccionar "+6" en el formulario.</p>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">URL del documento</th>
+          <td>
+            <input type="url" style="width:100%;max-width:600px;"
+              name="<?php echo esc_attr(MR_OPT); ?>[group_file_url]"
+              value="<?php echo esc_attr($s['group_file_url'] ?? ''); ?>"
+              placeholder="https://...">
+            <p class="description">Enlace al impreso de solicitud para grupos (PDF, Word, etc.).</p>
+          </td>
+        </tr>
+      </table>
 
       <h2>reCAPTCHA v3</h2>
       <p>Añade protección anti-spam invisible. <a href="https://www.google.com/recaptcha/admin" target="_blank" rel="noopener">Obtener claves</a> (selecciona reCAPTCHA v3).</p>

@@ -87,13 +87,25 @@ function mr_shortcode() {
       </div>
 
       <div class="mr-field">
-        <label>Asistentes (máx. 5)</label>
+        <label>Asistentes</label>
         <select id="mr_attendees">
           <?php for ($i=1;$i<=5;$i++): ?>
             <option value="<?php echo (int)$i; ?>"><?php echo (int)$i; ?></option>
           <?php endfor; ?>
+          <option value="6">+6</option>
         </select>
       </div>
+    </div>
+
+    <?php
+      $group_text = $s['group_text'] ?? '';
+      $group_url  = $s['group_file_url'] ?? '';
+    ?>
+    <div id="mr_group_msg" class="mr-group-msg" style="display:none;">
+      <p><?php echo wp_kses_post($group_text); ?></p>
+      <?php if ($group_url): ?>
+        <a href="<?php echo esc_url($group_url); ?>" class="mr-btn" target="_blank" rel="noopener noreferrer">Descargar impreso</a>
+      <?php endif; ?>
     </div>
 
     <div class="mr-sessions">

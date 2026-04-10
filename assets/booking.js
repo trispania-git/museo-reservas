@@ -66,9 +66,19 @@
       sel.appendChild(opt);
     }
 
-    const next = Math.min(prev, max);
-    sel.value = String(next);
-    buildCompanions(next);
+    // Siempre añadir opción +6
+    const opt6 = document.createElement('option');
+    opt6.value = '6';
+    opt6.textContent = '+6';
+    sel.appendChild(opt6);
+
+    if (prev >= 6) {
+      sel.value = '6';
+    } else {
+      const next = Math.min(prev, max);
+      sel.value = String(next);
+      buildCompanions(next);
+    }
   }
 
   function resetAttendeesToGeneral(){
@@ -478,9 +488,28 @@
     resetAttendeesToGeneral();
 
     const attEl = $('#mr_attendees');
+    const groupMsg = $('#mr_group_msg');
+    const sessions = document.querySelector('.mr-sessions');
+
+    function handleAttendeesChange() {
+      const val = parseInt(attEl.value, 10);
+      if (val >= 6 && groupMsg) {
+        // Mostrar mensaje de grupo, ocultar formulario y sesiones
+        form.style.display = 'none';
+        if (sessions) sessions.style.display = 'none';
+        groupMsg.style.display = 'block';
+      } else {
+        // Mostrar formulario y sesiones, ocultar mensaje de grupo
+        form.style.display = '';
+        if (sessions) sessions.style.display = '';
+        if (groupMsg) groupMsg.style.display = 'none';
+        buildCompanions(val);
+      }
+    }
+
     if (attEl) {
-      buildCompanions(parseInt(attEl.value,10));
-      attEl.addEventListener('change', () => buildCompanions(parseInt(attEl.value,10)));
+      handleAttendeesChange();
+      attEl.addEventListener('change', handleAttendeesChange);
     }
 
     let isSubmitting = false;
