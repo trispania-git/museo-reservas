@@ -163,26 +163,8 @@ function mr_ajax_get_availability() {
   $date = sanitize_text_field($_POST['date'] ?? '');
   $s = mr_get_settings();
 
-  $dow = (string)date('w', strtotime($date));
-  $day_cap = isset($s['capacity_by_day'][$dow]) ? $s['capacity_by_day'][$dow] : 'NOT_SET';
-  $is_blocked = function_exists('mr_date_is_blocked') ? mr_date_is_blocked($date, $s) : 'N/A';
-
-  $debug = [
-    'date' => $date,
-    'dow' => $dow,
-    'is_open' => mr_is_date_open($date, $s),
-    'is_blocked' => $is_blocked,
-    'global_capacity' => $s['capacity'],
-    'day_capacity_raw' => $day_cap,
-    'day_capacity_type' => gettype($day_cap),
-    'blocked_dates' => $s['blocked_dates'] ?? '',
-    'times_by_day_raw' => $s['times_by_day'][$dow] ?? 'NOT_SET',
-    'times_by_day_all' => $s['times_by_day'],
-    'days_open' => $s['days_open'],
-  ];
-
   if (!mr_is_date_open($date, $s)) {
-    wp_send_json_success(['times' => [], '_debug' => $debug]);
+    wp_send_json_success(['times' => []]);
   }
 
   $times = mr_times_for_date($date, $s);
@@ -197,7 +179,7 @@ function mr_ajax_get_availability() {
     ];
   }
 
-  wp_send_json_success(['times' => $out, '_debug' => $debug]);
+  wp_send_json_success(['times' => $out]);
 }
 
 function mr_ajax_make_booking() {

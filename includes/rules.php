@@ -106,7 +106,14 @@ function mr_times_for_weekday($dow, $s) {
   foreach ($lines as $t) {
     $t = trim($t);
     if ($t === '') continue;
-    if (preg_match('/^\d{2}:\d{2}$/', $t)) $times[] = $t;
+    // Aceptar HH:MM, H:MM, o solo H/HH (sin minutos → :00)
+    if (preg_match('/^\d{1,2}:\d{2}$/', $t)) {
+      $parts = explode(':', $t);
+      $t = str_pad($parts[0], 2, '0', STR_PAD_LEFT) . ':' . $parts[1];
+      $times[] = $t;
+    } elseif (preg_match('/^\d{1,2}$/', $t)) {
+      $times[] = str_pad($t, 2, '0', STR_PAD_LEFT) . ':00';
+    }
   }
 
   $times = array_values(array_unique($times));
