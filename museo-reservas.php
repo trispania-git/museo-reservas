@@ -47,6 +47,7 @@ function mr_get_settings() {
     'extra_open' => "",
     'recaptcha_site_key' => "",
     'recaptcha_secret_key' => "",
+    'capacity_by_day' => ['0'=>'','1'=>'','2'=>'','3'=>'','4'=>'','5'=>'','6'=>''],
   ];
 
   $s = get_option(MR_OPT, []);
@@ -56,10 +57,12 @@ function mr_get_settings() {
 
   if (!is_array($s['days_open'])) $s['days_open'] = $defaults['days_open'];
   if (!is_array($s['times_by_day'])) $s['times_by_day'] = $defaults['times_by_day'];
+  if (!is_array($s['capacity_by_day'])) $s['capacity_by_day'] = $defaults['capacity_by_day'];
 
   for ($i=0; $i<=6; $i++) {
     $k = (string)$i;
     if (!array_key_exists($k, $s['times_by_day'])) $s['times_by_day'][$k] = "";
+    if (!array_key_exists($k, $s['capacity_by_day'])) $s['capacity_by_day'][$k] = "";
   }
 
   return $s;
@@ -141,6 +144,42 @@ function mr_sanitize_settings($in) {
 
   $out['recaptcha_site_key'] = sanitize_text_field($in['recaptcha_site_key'] ?? '');
   $out['recaptcha_secret_key'] = sanitize_text_field($in['recaptcha_secret_key'] ?? '');
+
+  // Aforo por día de la semana
+  $cbd_in = (array)($in['capacity_by_day'] ?? []);
+  $cbd_old = [];
+  $old_settings = get_option(MR_OPT, []);
+  if (is_array($old_settings) && isset($old_settings['capacity_by_day'])) {
+    $cbd_old = (array)$old_settings['capacity_by_day'];
+  }
+
+  $cbd = [];
+  $days_names = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  for ($i=0; $i<=6; $i++) {
+    $k = (string)$i;
+    $raw = trim((string)($cbd_in[$k] ?? ''));
+    if ($raw === '') {
+      $cbd[$k] = '';
+      continue;
+    }
+    $val = max(1, intval($raw));
+
+    // Validar que no se reduce por debajo de reservas existentes
+    if (function_exists('mr_db_max_attendees_for_weekday')) {
+      $max_booked = mr_db_max_attendees_for_weekday($i);
+      if ($max_booked > 0 && $val < $max_booked) {
+        $cbd[$k] = $cbd_old[$k] ?? '';
+        add_settings_error('mr_group', 'capacity_day_' . $i,
+          sprintf('No se puede establecer aforo %d para %s: ya hay un slot con %d asistentes confirmados.',
+            $val, $days_names[$i], $max_booked),
+          'error'
+        );
+        continue;
+      }
+    }
+    $cbd[$k] = $val;
+  }
+  $out['capacity_by_day'] = $cbd;
 
   return $out;
 }
@@ -298,7 +337,7 @@ function mr_settings_page() {
       </table>
 
       <table class="widefat striped" style="max-width:900px;">
-        <thead><tr><th>Día</th><th>Horas (HH:MM, una por línea)</th></tr></thead>
+        <thead><tr><th>Día</th><th>Horas (HH:MM, una por línea)</th><th style="width:120px;">Aforo</th></tr></thead>
         <tbody>
           <?php for ($i=0; $i<=6; $i++): ?>
             <tr>
@@ -309,10 +348,18 @@ function mr_settings_page() {
                     echo esc_textarea($s['times_by_day'][(string)$i] ?? '');
                   ?></textarea>
               </td>
+              <td>
+                <?php $day_cap = $s['capacity_by_day'][(string)$i] ?? ''; ?>
+                <input type="number" min="1" style="width:80px;"
+                  name="<?php echo esc_attr(MR_OPT); ?>[capacity_by_day][<?php echo esc_attr($i); ?>]"
+                  value="<?php echo esc_attr($day_cap); ?>"
+                  placeholder="<?php echo esc_attr($s['capacity']); ?>">
+              </td>
             </tr>
           <?php endfor; ?>
         </tbody>
       </table>
+      <p class="description">Deja vacío para usar el aforo general (<?php echo esc_html($s['capacity']); ?>).</p>
 
       <h2>Fechas extra de apertura</h2>
       <p>Una por línea. Admite <strong>DD-MM-YYYY</strong> o <strong>YYYY-MM-DD</strong>.</p>

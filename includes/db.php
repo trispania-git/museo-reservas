@@ -94,6 +94,31 @@ function mr_db_count_bookings_for_slot($date, $time) {
 }
 
 /**
+ * Máximo de asistentes confirmados en un solo slot para un día de la semana (fechas futuras).
+ * $dow: 0=Dom, 1=Lun, ..., 6=Sáb (misma convención que PHP date('w'))
+ */
+function mr_db_max_attendees_for_weekday($dow) {
+  global $wpdb;
+  $table = mr_db_table();
+  $dow = intval($dow);
+
+  // MySQL DAYOFWEEK: 1=Dom..7=Sáb → restamos 1 para alinear con PHP (0=Dom..6=Sáb)
+  $mysql_dow = $dow + 1;
+
+  $val = $wpdb->get_var($wpdb->prepare(
+    "SELECT MAX(slot_total) FROM (
+       SELECT SUM(attendees) AS slot_total
+       FROM {$table}
+       WHERE status='confirmed' AND slot_date >= CURDATE() AND DAYOFWEEK(slot_date) = %d
+       GROUP BY slot_date, slot_time
+     ) t",
+    $mysql_dow
+  ));
+
+  return intval($val);
+}
+
+/**
  * Inserta una reserva y devuelve el ID.
  */
 function mr_db_insert_booking($data) {

@@ -208,7 +208,12 @@ function mr_remaining_for_slot($date, $time, $s) {
     }
   }
 
-  $capacity = intval($s['capacity'] ?? 0);
+  // Aforo: usar el del día si existe, si no el global
+  $dow = (string)date('w', strtotime($date));
+  $day_cap = $s['capacity_by_day'][$dow] ?? '';
+  $capacity = ($day_cap !== '' && $day_cap !== null && (string)$day_cap !== '')
+    ? intval($day_cap)
+    : intval($s['capacity'] ?? 0);
   if ($capacity <= 0) return 0;
 
   $used = function_exists('mr_db_sum_attendees') ? (int) mr_db_sum_attendees($date, $time) : 0;

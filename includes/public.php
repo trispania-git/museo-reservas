@@ -315,7 +315,13 @@ function mr_ajax_make_booking() {
     'booking_code' => $booking_code,
     'slot_date' => $date,
     'slot_time' => $time,
-    'capacity'  => intval($s['capacity']),
+    'capacity'  => (function() use ($date, $s) {
+      $dow = (string)date('w', strtotime($date));
+      $day_cap = $s['capacity_by_day'][$dow] ?? '';
+      return ($day_cap !== '' && $day_cap !== null && (string)$day_cap !== '')
+        ? intval($day_cap)
+        : intval($s['capacity']);
+    })(),
     'attendees' => $att,
     'req_first_name' => $req_first,
     'req_last_name'  => $req_last,
