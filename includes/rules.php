@@ -244,8 +244,19 @@ function mr_remaining_for_slot($date, $time, $s) {
   if ($capacity <= 0) return 0;
 
   $used = function_exists('mr_db_sum_attendees') ? (int) mr_db_sum_attendees($date, $time) : 0;
-  $remaining = $capacity - $used;
+  $group = mr_get_group_attendees($date, $time);
+  $remaining = $capacity - $used - $group;
   return max(0, (int)$remaining);
+}
+
+/**
+ * Devuelve los asistentes de grupo asignados manualmente a una sesión.
+ */
+function mr_get_group_attendees($date, $time) {
+  $data = get_option('mr_group_attendees', []);
+  if (!is_array($data)) return 0;
+  $key = $date . '|' . $time;
+  return max(0, intval($data[$key] ?? 0));
 }
 
 /**

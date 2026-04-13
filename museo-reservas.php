@@ -23,6 +23,7 @@ require_once MR_PATH . 'includes/rules.php';
 require_once MR_PATH . 'includes/emails.php';
 require_once MR_PATH . 'includes/public.php';
 require_once MR_PATH . 'includes/admin-bookings.php';
+require_once MR_PATH . 'includes/admin-dias.php';
 
 /**
  * Settings getter central
@@ -111,6 +112,15 @@ add_action('admin_menu', function() {
     'manage_options',
     'museo-reservas-bookings',
     'mr_admin_bookings_page'
+  );
+
+  add_submenu_page(
+    'museo-reservas',
+    'Días Reservas',
+    'Días Reservas',
+    'manage_options',
+    'museo-reservas-dias',
+    'mr_admin_dias_page'
   );
 
 }, 9);
