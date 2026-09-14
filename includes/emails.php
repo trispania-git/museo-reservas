@@ -81,6 +81,9 @@ function mr_send_booking_emails($booking_id, $booking_data, $settings) {
     </table>
   ";
 
+  // Flag para que log.php capture wp_mail_failed solo durante nuestros envíos
+  $GLOBALS['mr_mailing'] = true;
+
   if ($to_user) {
     $body_user = "
       {$styles}
@@ -98,7 +101,14 @@ function mr_send_booking_emails($booking_id, $booking_data, $settings) {
       "From: {$from_name} <{$from_email}>",
     ];
 
-    try { wp_mail($to_user, $subject_user, $body_user, $headers_user); } catch (\Throwable $e) {}
+    try {
+      $ok = wp_mail($to_user, $subject_user, $body_user, $headers_user);
+      if (!$ok && function_exists('mr_log')) {
+        mr_log('email_failed', "wp_mail devolvió false (confirmación al usuario, reserva {$ref})", ['to' => $to_user, 'booking_id' => $booking_id], 'warning');
+      }
+    } catch (\Throwable $e) {
+      if (function_exists('mr_log')) mr_log('email_exception', $e->getMessage(), ['to' => $to_user, 'booking_id' => $booking_id]);
+    }
   }
 
   if ($to_museo) {
@@ -127,6 +137,15 @@ function mr_send_booking_emails($booking_id, $booking_data, $settings) {
       "From: {$from_name} <{$from_email}>",
     ];
 
-    try { wp_mail($to_museo, $subject_museo, $body_museo, $headers_museo); } catch (\Throwable $e) {}
+    try {
+      $ok = wp_mail($to_museo, $subject_museo, $body_museo, $headers_museo);
+      if (!$ok && function_exists('mr_log')) {
+        mr_log('email_failed', "wp_mail devolvió false (aviso interno, reserva {$ref})", ['to' => $to_museo, 'booking_id' => $booking_id], 'warning');
+      }
+    } catch (\Throwable $e) {
+      if (function_exists('mr_log')) mr_log('email_exception', $e->getMessage(), ['to' => $to_museo, 'booking_id' => $booking_id]);
+    }
   }
+
+  $GLOBALS['mr_mailing'] = false;
 }

@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Museo Reservas
  * Plugin URI: https://welowmarketing.com/
- * Description: Reservas Sala Hisrírica Guardia Real 
- * Version: 1.1.0
+ * Description: Reservas Sala Histórica Guardia Real
+ * Version: 1.2.0
  * Author: Welow Marketing
  * Author URI: https://welowmarketing.com/
  * License: GPLv2 or later
@@ -12,13 +12,14 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MR_VERSION', '1.1.0');
+define('MR_VERSION', '1.2.0');
 define('MR_PATH', plugin_dir_path(__FILE__));
 define('MR_URL', plugin_dir_url(__FILE__));
 define('MR_OPT', 'mr_settings');
 
 // Includes (orden importante)
 require_once MR_PATH . 'includes/db.php';
+require_once MR_PATH . 'includes/log.php';
 require_once MR_PATH . 'includes/rules.php';
 require_once MR_PATH . 'includes/emails.php';
 require_once MR_PATH . 'includes/public.php';
@@ -76,10 +77,22 @@ function mr_get_settings() {
 register_activation_hook(__FILE__, 'mr_activate');
 function mr_activate() {
   mr_db_install();
+  update_option('mr_db_version', MR_VERSION);
   if (!get_option(MR_OPT)) {
     update_option(MR_OPT, mr_get_settings());
   }
 }
+
+/**
+ * Actualización de BD cuando se sube una versión nueva por FTP/zip
+ * (sobrescribir ficheros no dispara el hook de activación).
+ */
+add_action('plugins_loaded', function() {
+  if (get_option('mr_db_version') !== MR_VERSION) {
+    mr_db_install();
+    update_option('mr_db_version', MR_VERSION);
+  }
+});
 
 /**
  * ✅ Menú unificado
@@ -121,6 +134,15 @@ add_action('admin_menu', function() {
     'manage_options',
     'museo-reservas-dias',
     'mr_admin_dias_page'
+  );
+
+  add_submenu_page(
+    'museo-reservas',
+    'Registro',
+    'Registro',
+    'manage_options',
+    'museo-reservas-log',
+    'mr_admin_log_page'
   );
 
 }, 9);
@@ -211,110 +233,9 @@ function mr_sanitize_settings($in) {
 }
 
 /**
- * ✅ Enqueue frontend + localize (MR.ajax y MR.nonce)
+ * Enqueue frontend, localize (MR.*) y handlers AJAX: ver includes/public.php
+ * (antes había una segunda copia aquí que cargaba booking.js dos veces).
  */
-add_action('wp_enqueue_scripts', function() {
-  if (!is_singular()) return;
-  global $post;
-  if (!$post || !has_shortcode($post->post_content, 'museo_reservas')) return;
-
-  $s = mr_get_settings();
-
-  $handle = 'mr-booking';
-  if (!wp_script_is($handle, 'enqueued')) {
-    wp_enqueue_script($handle, MR_URL . 'assets/booking.js', [], MR_VERSION, true);
-  }
-
-  // ✅ listas para JS (solo YYYY-MM-DD)
-  $closedDates  = function_exists('mr_parse_dates_list') ? array_values(mr_parse_dates_list($s['closures'])) : [];
-  $blockedDates = function_exists('mr_parse_dates_list') ? array_values(mr_parse_dates_list($s['blocked_dates'] ?? '')) : [];
-  $extraDates   = function_exists('mr_parse_dates_list') ? array_values(mr_parse_dates_list($s['extra_open'])) : [];
-
-  // Bloqueados se mezclan con cerrados para deshabilitar en el calendario
-  $closedDates = array_values(array_unique(array_merge($closedDates, $blockedDates)));
-
-  $mr_data = [
-    'ajax'           => admin_url('admin-ajax.php'),
-    'nonce'          => wp_create_nonce('mr_nonce'),
-    'maxAtt'         => (string)($s['max_attendees'] ?? 5),
-    'openDays'       => array_values((array)$s['days_open']),
-
-    // cierres
-    'closedDates'    => $closedDates,
-
-    // ✅ compat: antes era "extraOpen", ahora también enviamos "extraOpenDates"
-    'extraOpen'      => $extraDates,
-    'extraOpenDates' => $extraDates,
-  ];
-
-  // reCAPTCHA v3
-  $rc_site_key = trim($s['recaptcha_site_key'] ?? '');
-  if ($rc_site_key !== '') {
-    $mr_data['recaptchaSiteKey'] = $rc_site_key;
-    wp_enqueue_script('google-recaptcha', 'https://www.google.com/recaptcha/api.js?render=' . urlencode($rc_site_key), [], null, true);
-  }
-
-  wp_localize_script($handle, 'MR', $mr_data);
-}, 20);
-
-/**
- * ✅ AJAX Hooks (logueado + no logueado)
- */
-add_action('wp_ajax_mr_get_times', 'mr_ajax_get_times');
-add_action('wp_ajax_nopriv_mr_get_times', 'mr_ajax_get_times');
-
-add_action('wp_ajax_mr_make_booking', 'mr_ajax_make_booking');
-add_action('wp_ajax_nopriv_mr_make_booking', 'mr_ajax_make_booking');
-
-/**
- * ✅ Handler AJAX: obtener horas + plazas restantes para una fecha
- */
-if (!function_exists('mr_ajax_get_times')) {
-  function mr_ajax_get_times() {
-    check_ajax_referer('mr_nonce', 'nonce');
-
-    $s = mr_get_settings();
-    $date = sanitize_text_field($_POST['date'] ?? '');
-
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-      wp_send_json_error(['message' => 'Fecha no válida.']);
-    }
-
-    if (function_exists('mr_is_date_open') && !mr_is_date_open($date, $s)) {
-      wp_send_json_error(['message' => 'La fecha seleccionada no está disponible.']);
-    }
-
-    $times = function_exists('mr_times_for_date') ? (array) mr_times_for_date($date, $s) : [];
-    if (empty($times)) {
-      wp_send_json_error(['message' => 'No hay sesiones configuradas para ese día.']);
-    }
-
-    $out = [];
-    foreach ($times as $t) {
-      $t = sanitize_text_field($t);
-      if (!preg_match('/^\d{2}:\d{2}$/', $t)) continue;
-
-      if (function_exists('mr_slot_is_closed') && mr_slot_is_closed($date, $t, $s)) {
-        continue;
-      }
-
-      $remaining = function_exists('mr_remaining_for_slot')
-        ? (int) mr_remaining_for_slot($date, $t, $s)
-        : (int) ($s['capacity'] ?? 0);
-
-      $out[] = [
-        'time' => $t,
-        'remaining' => max(0, $remaining),
-      ];
-    }
-
-    if (empty($out)) {
-      wp_send_json_error(['message' => 'No hay sesiones disponibles para esa fecha.']);
-    }
-
-    wp_send_json_success(['times' => $out]);
-  }
-}
 
 /**
  * Admin: Ajustes

@@ -37,21 +37,50 @@ add_action('wp_enqueue_scripts', function() {
   }
   $extraDates = array_values(array_unique($extraDates));
 
-  wp_localize_script('mr-js', 'MR', [
+  // Días bloqueados: se deshabilitan en el calendario igual que los cierres
+  $blockedDates = function_exists('mr_parse_dates_list') ? mr_parse_dates_list($s['blocked_dates'] ?? '') : [];
+  $closedDates = array_values(array_unique(array_merge($closedDates, $blockedDates)));
+
+  // LiteSpeed Cache: si ESI está activo, el nonce se inyecta fresco en cada visita
+  // aunque la página venga de caché (sin esto caduca a las 24 h y el AJAX devuelve 403).
+  do_action('litespeed_nonce', 'mr_nonce');
+
+  $mr_data = [
     'ajax' => admin_url('admin-ajax.php'),
     'nonce' => wp_create_nonce('mr_nonce'),
     'maxAtt' => 5,
     'openDays' => array_map('intval', (array)($s['days_open'] ?? [])),
     'closedDates' => $closedDates,
     'extraOpenDates' => $extraDates,
-  ]);
+    'ajaxTimeout' => 20000,
+  ];
+
+  // reCAPTCHA v3
+  $rc_site_key = trim($s['recaptcha_site_key'] ?? '');
+  if ($rc_site_key !== '') {
+    $mr_data['recaptchaSiteKey'] = $rc_site_key;
+    wp_enqueue_script('google-recaptcha', 'https://www.google.com/recaptcha/api.js?render=' . urlencode($rc_site_key), [], null, true);
+  }
+
+  wp_localize_script('mr-js', 'MR', $mr_data);
 });
 
 add_action('wp_ajax_mr_get_availability', 'mr_ajax_get_availability');
 add_action('wp_ajax_nopriv_mr_get_availability', 'mr_ajax_get_availability');
 
+add_action('wp_ajax_mr_get_nonce', 'mr_ajax_get_nonce');
+add_action('wp_ajax_nopriv_mr_get_nonce', 'mr_ajax_get_nonce');
+
 add_action('wp_ajax_mr_make_booking', 'mr_ajax_make_booking');
 add_action('wp_ajax_nopriv_mr_make_booking', 'mr_ajax_make_booking');
+
+/**
+ * Nonce fresco para el JS (se pide si la reserva devuelve 403 por nonce caducado en caché).
+ */
+function mr_ajax_get_nonce() {
+  nocache_headers();
+  wp_send_json_success(['nonce' => wp_create_nonce('mr_nonce')]);
+}
 
 function mr_norm_id($value) {
   $v = strtoupper((string)$value);
@@ -169,33 +198,59 @@ function mr_shortcode() {
   return ob_get_clean();
 }
 
+/**
+ * Disponibilidad de una fecha. Sin nonce a propósito: solo devuelve datos públicos
+ * (las plazas libres) y el nonce embebido en la página cacheada caduca a las 24 h.
+ */
 function mr_ajax_get_availability() {
-  check_ajax_referer('mr_nonce', 'nonce');
+  mr_log_watch_request('mr_get_availability');
+  nocache_headers();
 
-  $date = sanitize_text_field($_POST['date'] ?? '');
-  $s = mr_get_settings();
+  try {
+    $date = sanitize_text_field($_POST['date'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+      wp_send_json_error(['message' => 'Fecha no válida.']);
+    }
 
-  if (!mr_is_date_open($date, $s)) {
-    wp_send_json_success(['times' => []]);
+    $s = mr_get_settings();
+
+    if (!mr_is_date_open($date, $s)) {
+      wp_send_json_success(['times' => []]);
+    }
+
+    $times = mr_times_for_date($date, $s);
+    $out = [];
+
+    foreach ($times as $t) {
+      $remaining = mr_remaining_for_slot($date, $t, $s);
+      $out[] = [
+        'time' => $t,
+        'remaining' => (int)$remaining,
+        'is_full' => ((int)$remaining <= 0),
+      ];
+    }
+
+    wp_send_json_success(['times' => $out]);
+  } catch (\Throwable $e) {
+    mr_log('availability_exception', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine(), 'post' => mr_log_safe_post()]);
+    wp_send_json_error(['message' => 'Error al consultar la disponibilidad. Inténtalo de nuevo.']);
   }
-
-  $times = mr_times_for_date($date, $s);
-  $out = [];
-
-  foreach ($times as $t) {
-    $remaining = mr_remaining_for_slot($date, $t, $s);
-    $out[] = [
-      'time' => $t,
-      'remaining' => (int)$remaining,
-      'is_full' => ((int)$remaining <= 0),
-    ];
-  }
-
-  wp_send_json_success(['times' => $out]);
 }
 
 function mr_ajax_make_booking() {
+  mr_log_watch_request('mr_make_booking');
+  nocache_headers();
   check_ajax_referer('mr_nonce', 'nonce');
+
+  try {
+    mr_process_booking();
+  } catch (\Throwable $e) {
+    mr_log('booking_exception', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine(), 'post' => mr_log_safe_post()]);
+    wp_send_json_error(['message' => 'Error inesperado al procesar la reserva. Inténtalo de nuevo.']);
+  }
+}
+
+function mr_process_booking() {
   $s = mr_get_settings();
 
   // reCAPTCHA v3 verification
@@ -214,10 +269,16 @@ function mr_ajax_make_booking() {
       'timeout' => 10,
     ]);
     if (is_wp_error($rc_response)) {
+      mr_log('recaptcha_http_error', $rc_response->get_error_message(), ['post' => mr_log_safe_post()], 'warning');
       wp_send_json_error(['message' => 'Error al verificar la seguridad. Inténtalo de nuevo.']);
     }
     $rc_body = json_decode(wp_remote_retrieve_body($rc_response), true);
     if (empty($rc_body['success']) || ($rc_body['score'] ?? 0) < 0.5) {
+      mr_log('recaptcha_failed', 'reCAPTCHA rechazado', [
+        'score' => $rc_body['score'] ?? null,
+        'error_codes' => $rc_body['error-codes'] ?? null,
+        'post' => mr_log_safe_post(),
+      ], 'warning');
       wp_send_json_error(['message' => 'Verificación de seguridad fallida. Si el problema persiste, contacta con nosotros.']);
     }
   }
@@ -303,12 +364,14 @@ function mr_ajax_make_booking() {
   $lock = 'mr_' . str_replace('-','',$date) . '_' . str_replace(':','',$time);
   $got = $wpdb->get_var($wpdb->prepare("SELECT GET_LOCK(%s,5)", $lock));
   if ((int)$got !== 1) {
+    mr_log('booking_lock_timeout', 'GET_LOCK no obtenido en 5 s (otra reserva simultánea en la misma sesión)', ['post' => mr_log_safe_post()], 'warning');
     wp_send_json_error(['message' => 'Sistema ocupado. Inténtalo de nuevo.']);
   }
 
   $remaining = mr_remaining_for_slot($date, $time, $s);
   if ($remaining < $att) {
     $wpdb->get_var($wpdb->prepare("SELECT RELEASE_LOCK(%s)", $lock));
+    mr_log('booking_rejected', "Plazas insuficientes: quedan {$remaining}, se pedían {$att}", ['post' => mr_log_safe_post()], 'info');
     wp_send_json_error(['message' => 'No hay plazas suficientes para esa sesión.']);
   }
 
@@ -320,10 +383,13 @@ function mr_ajax_make_booking() {
   $name3 = preg_replace('/[^A-Z]/', '', $name3);
   $name3 = substr($name3 . 'XXX', 0, 3);
 
+  // Secuencial: partimos del nº de reservas confirmadas + 1 y saltamos códigos ya usados
+  // (una reserva cancelada/eliminada dejaba su código ocupado y la siguiente chocaba con la clave única).
   $seq = mr_db_count_bookings_for_slot($date, $time) + 1;
-  $seq2 = str_pad((string)$seq, 2, '0', STR_PAD_LEFT);
-
-  $booking_code = $yyyymmdd . $hh . $name3 . $seq2;
+  do {
+    $booking_code = $yyyymmdd . $hh . $name3 . str_pad((string)$seq, 2, '0', STR_PAD_LEFT);
+    $seq++;
+  } while (mr_db_booking_code_exists($booking_code) && $seq < 1000);
 
   $booking_data = [
     'booking_code' => $booking_code,
@@ -355,6 +421,7 @@ function mr_ajax_make_booking() {
   $wpdb->get_var($wpdb->prepare("SELECT RELEASE_LOCK(%s)", $lock));
 
   if (!$id) {
+    mr_log('booking_db_error', $wpdb->last_error ?: 'insert devolvió false', ['booking_code' => $booking_code, 'post' => mr_log_safe_post()]);
     wp_send_json_error(['message' => 'Error al guardar la reserva.']);
   }
 

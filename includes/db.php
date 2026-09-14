@@ -58,6 +58,19 @@ function mr_db_install() {
 
   $p3 = $wpdb->get_var($wpdb->prepare("SHOW COLUMNS FROM {$table} LIKE %s", 'privacy_at'));
   if (!$p3) $wpdb->query("ALTER TABLE {$table} ADD COLUMN privacy_at DATETIME NULL");
+
+  // Tabla de registro de incidencias
+  if (function_exists('mr_log_install')) mr_log_install();
+}
+
+/**
+ * ¿Existe ya una reserva (de cualquier estado) con este código?
+ */
+function mr_db_booking_code_exists($code) {
+  global $wpdb;
+  $table = mr_db_table();
+  $n = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE booking_code=%s", $code));
+  return intval($n) > 0;
 }
 
 /**

@@ -38,11 +38,38 @@
   function getErrMsg(res, fallback){
     if (!res) return fallback;
     if (typeof res === 'string') return res;
+
+    // Errores de transporte clasificados por post()
+    if (res._kind === 'timeout')  return 'El servidor está tardando demasiado en responder. Espera unos segundos e inténtalo de nuevo.';
+    if (res._kind === 'nonce')    return 'La página llevaba demasiado tiempo abierta y la sesión ha caducado. Recarga la página e inténtalo de nuevo.';
+    if (res._kind === 'network')  return 'No se ha podido conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo.';
+    if (res._kind === 'http')     return `El servidor ha devuelto un error (HTTP ${res._http}). Inténtalo de nuevo en unos minutos.`;
+    if (res._kind === 'badjson')  return 'Respuesta inesperada del servidor. Inténtalo de nuevo en unos minutos.';
+
     const d = res.data;
     if (typeof d === 'string' && d.trim()) return d.trim();
     if (d && typeof d === 'object' && d.message) return String(d.message);
     if (res.message) return String(res.message);
     return fallback;
+  }
+
+  /* ==========================
+     Reporte de errores al servidor (Museo Reservas · Registro)
+     Nunca lanza ni bloquea; sin nonce a propósito.
+  ========================== */
+  function clientLog(event, fields){
+    try {
+      const fd = new FormData();
+      fd.append('action', 'mr_client_log');
+      fd.append('event', event);
+      fd.append('url', location.href);
+      Object.keys(fields || {}).forEach(k => {
+        if (fields[k] !== undefined && fields[k] !== null) fd.append(k, String(fields[k]));
+      });
+      fetch(window.MR?.ajax || '/wp-admin/admin-ajax.php', {
+        method: 'POST', body: fd, credentials: 'same-origin', keepalive: true
+      }).catch(() => {});
+    } catch (_) {}
   }
 
   /* ==========================
@@ -205,6 +232,13 @@
   /* ==========================
      AJAX helper
   ========================== */
+  const AJAX_TIMEOUT = parseInt(window.MR?.ajaxTimeout || '20000', 10) || 20000;
+
+  /**
+   * Devuelve siempre un objeto {success, data}. Si falla el transporte,
+   * success=false y _kind ∈ timeout | network | nonce | http | badjson (+ _http).
+   * Cada fallo se reporta al registro del plugin.
+   */
   async function post(action, data){
     const fd = new FormData();
     fd.append('action', action);
@@ -212,19 +246,73 @@
     Object.keys(data || {}).forEach(k => fd.append(k, data[k]));
 
     const ajaxUrl = window.MR?.ajax || '/wp-admin/admin-ajax.php';
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), AJAX_TIMEOUT);
+    const t0 = Date.now();
+    const logCtx = { ajax_action: action, date: data?.date || '' };
 
-    const res = await fetch(ajaxUrl, {
-      method: 'POST',
-      credentials: 'same-origin',
-      body: fd
-    });
-
-    const txt = await res.text();
-    try { return JSON.parse(txt); }
-    catch {
-      console.error('[MR] Respuesta NO JSON action=', action, txt);
-      return {success:false, data:{message:'Error del servidor (respuesta no JSON). Revisa Network → Response o debug.log.'}};
+    let res, txt;
+    try {
+      res = await fetch(ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd,
+        signal: ctrl.signal
+      });
+      txt = await res.text();
+    } catch (err) {
+      clearTimeout(timer);
+      const ms = Date.now() - t0;
+      if (err && err.name === 'AbortError') {
+        console.error('[MR] Timeout', action, ms + 'ms');
+        clientLog('client_timeout', { ...logCtx, ms, message: `Sin respuesta en ${ms} ms` });
+        return { success:false, _kind:'timeout' };
+      }
+      console.error('[MR] Error de red', action, err);
+      clientLog('client_network', { ...logCtx, ms, message: String(err && err.message || err) });
+      return { success:false, _kind:'network' };
     }
+    clearTimeout(timer);
+    const ms = Date.now() - t0;
+
+    // check_ajax_referer responde "-1" (o "0") con 403 cuando el nonce no vale
+    const body = (txt || '').trim();
+    if (res.status === 403 && (body === '-1' || body === '0')) {
+      console.warn('[MR] Nonce inválido en', action);
+      return { success:false, _kind:'nonce', _http:403 };
+    }
+
+    let json = null;
+    try { json = JSON.parse(txt); } catch (_) {}
+
+    if (json && typeof json === 'object') {
+      if (!res.ok && !json.success) json._http = res.status;
+      return json;
+    }
+
+    if (!res.ok) {
+      console.error('[MR] HTTP', res.status, action, body.slice(0, 200));
+      clientLog('client_http_error', { ...logCtx, ms, http: res.status, message: `HTTP ${res.status}`, snippet: body.slice(0, 300) });
+      return { success:false, _kind:'http', _http: res.status };
+    }
+
+    console.error('[MR] Respuesta NO JSON action=', action, body.slice(0, 200));
+    clientLog('client_bad_json', { ...logCtx, ms, http: res.status, message: 'Respuesta no JSON', snippet: body.slice(0, 300) });
+    return { success:false, _kind:'badjson', _http: res.status };
+  }
+
+  /**
+   * Pide un nonce nuevo al servidor (cuando el de la página cacheada ha caducado).
+   */
+  async function refreshNonce(){
+    const r = await post('mr_get_nonce', {});
+    if (r && r.success && r.data?.nonce) {
+      window.MR = window.MR || {};
+      window.MR.nonce = r.data.nonce;
+      clientLog('client_nonce_refresh', { message: 'Nonce renovado tras 403' });
+      return true;
+    }
+    return false;
   }
 
   /* ==========================
@@ -341,6 +429,17 @@
     if (!res || !res.success){
       clearTimesUI();
       msg('err', getErrMsg(res, 'No se pudieron cargar las sesiones.'));
+
+      // Botón para reintentar sin tener que volver a elegir la fecha
+      const box = $('#mr_times');
+      if (box) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mr-timepill';
+        btn.textContent = '↻ Reintentar';
+        btn.addEventListener('click', () => { clearMsg(); loadTimes(date); });
+        box.appendChild(btn);
+      }
       return;
     }
 
@@ -596,6 +695,7 @@
             recaptchaToken = await grecaptcha.execute(rcSiteKey, { action: 'booking' });
           } catch (err) {
             console.error('[MR] reCAPTCHA error:', err);
+            clientLog('client_recaptcha_error', { ajax_action: 'grecaptcha.execute', date, message: String(err && err.message || err) });
             msg('err', 'Error en la verificación de seguridad. Recarga la página e inténtalo de nuevo.');
             return;
           }
@@ -615,7 +715,13 @@
         };
         if (recaptchaToken) postData.recaptcha_token = recaptchaToken;
 
-        const res = await post('mr_make_booking', postData);
+        let res = await post('mr_make_booking', postData);
+
+        // Nonce caducado (página servida desde caché): renovar y reintentar una vez
+        if (res && res._kind === 'nonce') {
+          const ok = await refreshNonce();
+          if (ok) res = await post('mr_make_booking', postData);
+        }
 
         if (!res || !res.success){
           msg('err', getErrMsg(res, 'No se pudo completar la reserva.'));

@@ -33,6 +33,13 @@ function mr_normalize_date($raw) {
 }
 
 /**
+ * Alias usado por el listado de reservas y el export CSV (filtros Desde/Hasta en DD-MM-YYYY).
+ */
+function mr_norm_date_to_iso($raw) {
+  return mr_normalize_date($raw);
+}
+
+/**
  * Normaliza un listado (textarea) para guardar en ajustes.
  * Acepta:
  * - YYYY-MM-DD
