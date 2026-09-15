@@ -3,7 +3,7 @@
  * Plugin Name: Museo Reservas
  * Plugin URI: https://welowmarketing.com/
  * Description: Reservas Sala Histórica Guardia Real
- * Version: 1.2.0
+ * Version: 1.2.1
  * Author: Welow Marketing
  * Author URI: https://welowmarketing.com/
  * License: GPLv2 or later
@@ -12,10 +12,12 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MR_VERSION', '1.2.0');
+define('MR_VERSION', '1.2.1');
 define('MR_PATH', plugin_dir_path(__FILE__));
 define('MR_URL', plugin_dir_url(__FILE__));
 define('MR_OPT', 'mr_settings');
+define('MR_RATE_LIMIT_BOOKINGS', 5);   // reservas confirmadas por IP en una hora
+define('MR_RECAPTCHA_MIN_SCORE', 0.5);
 
 // Includes (orden importante)
 require_once MR_PATH . 'includes/db.php';

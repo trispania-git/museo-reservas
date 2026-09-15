@@ -79,6 +79,9 @@ function mr_log($event, $message = '', $context = [], $level = 'error', $source 
     $source = in_array($source, ['server','client'], true) ? $source : 'server';
 
     $ctx = is_array($context) ? $context : ['data' => $context];
+    if ($source === 'server' && !isset($ctx['user_agent']) && !empty($_SERVER['HTTP_USER_AGENT'])) {
+      $ctx['user_agent'] = mb_substr(sanitize_text_field((string)$_SERVER['HTTP_USER_AGENT']), 0, 200);
+    }
     $ctx_json = wp_json_encode($ctx, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if ($ctx_json === false) $ctx_json = '{}';
     if (strlen($ctx_json) > 20000) $ctx_json = substr($ctx_json, 0, 20000);

@@ -212,6 +212,12 @@ function mr_admin_bookings_page() {
                 . '<br><small>DNI: ' . esc_html($r['req_dni'] ?? '') . ' · Tel: ' . esc_html($r['req_phone'] ?? '') . '</small>'
                 . '<br><small>Email: ' . esc_html($r['req_email'] ?? '') . '</small>';
 
+              if (!empty($r['privacy_ip'])) {
+                $log_url = add_query_arg(['page' => 'museo-reservas-log', 'q' => $r['privacy_ip']], admin_url('admin.php'));
+                $req_line .= '<br><small>IP: ' . esc_html($r['privacy_ip'])
+                  . ' · <a href="' . esc_url($log_url) . '">ver en registro</a></small>';
+              }
+
               $status = $r['status'] ?? 'confirmed';
               $status_label = ($status === 'cancelled') ? 'Cancelada' : 'Confirmada';
 
@@ -433,7 +439,7 @@ function mr_export_csv() {
   fputcsv($out, [
     'codigo','id','fecha','hora','asistentes',
     'solicitante_nombre','solicitante_dni','solicitante_telefono','solicitante_email',
-    'acompanantes','created_at','status'
+    'acompanantes','created_at','status','ip'
   ], ';');
 
   foreach ($rows as $r) {
@@ -470,6 +476,7 @@ function mr_export_csv() {
       $comp_summary,
       $r['created_at'] ?? '',
       $r['status'] ?? '',
+      $r['privacy_ip'] ?? '',
     ], ';');
   }
 

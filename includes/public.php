@@ -190,6 +190,11 @@ function mr_shortcode() {
         </label>
       </div>
 
+      <div class="mr-hp" aria-hidden="true" style="position:absolute !important;left:-10000px !important;top:auto !important;width:1px !important;height:1px !important;overflow:hidden !important;">
+        <label for="mr_hp">No rellenar este campo</label>
+        <input type="text" id="mr_hp" name="mr_hp_field" tabindex="-1" autocomplete="off" value="">
+      </div>
+
       <button type="submit" class="mr-btn">Confirmar reserva</button>
       <div id="mr_msg" class="mr-msg" style="display:none"></div>
     </form>
@@ -253,18 +258,39 @@ function mr_ajax_make_booking() {
 function mr_process_booking() {
   $s = mr_get_settings();
 
+  // Honeypot: campo invisible que solo rellenan los bots
+  if (trim((string)($_POST['hp'] ?? '')) !== '') {
+    mr_log('honeypot_triggered', 'Campo trampa relleno: reserva descartada (probable bot)', ['post' => mr_log_safe_post()], 'warning');
+    wp_send_json_error(['message' => 'No se ha podido completar la reserva.']);
+  }
+
+  // Límite de reservas confirmadas por IP (ventana de 1 hora)
+  $rl_ip = mr_log_client_ip() ?: 'unknown';
+  $rl_key = 'mr_rl_' . md5($rl_ip);
+  $rl_count = (int)get_transient($rl_key);
+  if ($rl_count >= MR_RATE_LIMIT_BOOKINGS) {
+    mr_log('rate_limited', sprintf('Límite de %d reservas/hora alcanzado para esta IP', MR_RATE_LIMIT_BOOKINGS), ['post' => mr_log_safe_post()], 'warning');
+    wp_send_json_error(['message' => 'Se han realizado demasiadas reservas desde tu conexión en poco tiempo. Inténtalo más tarde o escríbenos por email.']);
+  }
+
   // reCAPTCHA v3 verification
+  $rc_note = 'desactivado';
+  $rc_help = ' Si usas un bloqueador de anuncios, una VPN o un navegador con protección estricta (Brave, Firefox en modo estricto...), desactívalo para esta página o prueba con otro navegador.';
   $rc_secret = trim($s['recaptcha_secret_key'] ?? '');
   if ($rc_secret !== '') {
     $rc_token = sanitize_text_field($_POST['recaptcha_token'] ?? '');
     if (!$rc_token) {
-      wp_send_json_error(['message' => 'Falta la verificación de seguridad. Recarga la página e inténtalo de nuevo.']);
+      mr_log('recaptcha_missing', 'Reserva sin token de reCAPTCHA (script de Google bloqueado en el navegador, o bot)', [
+        'recaptcha_status' => sanitize_key($_POST['recaptcha_status'] ?? ''),
+        'post' => mr_log_safe_post(),
+      ], 'warning');
+      wp_send_json_error(['message' => 'No se ha podido cargar la verificación de seguridad.' . $rc_help]);
     }
     $rc_response = wp_remote_post('https://www.google.com/recaptcha/api/siteverify', [
       'body' => [
         'secret'   => $rc_secret,
         'response' => $rc_token,
-        'remoteip' => $_SERVER['REMOTE_ADDR'] ?? '',
+        'remoteip' => mr_log_client_ip() ?: '',
       ],
       'timeout' => 10,
     ]);
@@ -273,13 +299,24 @@ function mr_process_booking() {
       wp_send_json_error(['message' => 'Error al verificar la seguridad. Inténtalo de nuevo.']);
     }
     $rc_body = json_decode(wp_remote_retrieve_body($rc_response), true);
-    if (empty($rc_body['success']) || ($rc_body['score'] ?? 0) < 0.5) {
-      mr_log('recaptcha_failed', 'reCAPTCHA rechazado', [
-        'score' => $rc_body['score'] ?? null,
-        'error_codes' => $rc_body['error-codes'] ?? null,
+    $rc_codes = is_array($rc_body['error-codes'] ?? null) ? $rc_body['error-codes'] : [];
+
+    if (empty($rc_body['success']) && in_array('browser-error', $rc_codes, true)) {
+      // Google no pudo evaluar el navegador (bloqueadores, privacidad estricta, VPN...).
+      // No indica bot: se permite la reserva y se anota. Siguen activos honeypot, límite por IP y nonce.
+      mr_log('recaptcha_browser_error', 'reCAPTCHA no pudo evaluar el navegador (browser-error): reserva permitida', [
         'post' => mr_log_safe_post(),
       ], 'warning');
-      wp_send_json_error(['message' => 'Verificación de seguridad fallida. Si el problema persiste, contacta con nosotros.']);
+      $rc_note = 'browser-error (permitida)';
+    } elseif (empty($rc_body['success']) || ($rc_body['score'] ?? 0) < MR_RECAPTCHA_MIN_SCORE) {
+      mr_log('recaptcha_failed', 'reCAPTCHA rechazado', [
+        'score' => $rc_body['score'] ?? null,
+        'error_codes' => $rc_codes ?: null,
+        'post' => mr_log_safe_post(),
+      ], 'warning');
+      wp_send_json_error(['message' => 'No hemos podido verificar que no eres un robot.' . $rc_help]);
+    } else {
+      $rc_note = 'score ' . $rc_body['score'];
     }
   }
 
@@ -412,7 +449,7 @@ function mr_process_booking() {
     'created_at'=> current_time('mysql'),
 
     'privacy_accepted' => 1,
-    'privacy_ip' => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field($_SERVER['REMOTE_ADDR']) : null,
+    'privacy_ip' => mr_log_client_ip(), // IP real del visitante (Cloudflare delante)
     'privacy_at' => current_time('mysql'),
   ];
 
@@ -424,6 +461,14 @@ function mr_process_booking() {
     mr_log('booking_db_error', $wpdb->last_error ?: 'insert devolvió false', ['booking_code' => $booking_code, 'post' => mr_log_safe_post()]);
     wp_send_json_error(['message' => 'Error al guardar la reserva.']);
   }
+
+  set_transient($rl_key, $rl_count + 1, HOUR_IN_SECONDS);
+
+  mr_log('booking_created', "Reserva {$booking_code} creada", [
+    'booking_code' => $booking_code,
+    'recaptcha' => $rc_note,
+    'post' => mr_log_safe_post(),
+  ], 'info');
 
   if (function_exists('mr_send_booking_emails')) {
     mr_send_booking_emails($id, $booking_data, $s);

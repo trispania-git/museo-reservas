@@ -711,9 +711,11 @@
           req_phone,
           req_email,
           companions: JSON.stringify(companions),
-          privacy: '1'
+          privacy: '1',
+          hp: ($('#mr_hp')?.value || '')
         };
         if (recaptchaToken) postData.recaptcha_token = recaptchaToken;
+        else if (rcSiteKey) postData.recaptcha_status = (typeof grecaptcha === 'undefined') ? 'script_blocked' : 'no_token';
 
         let res = await post('mr_make_booking', postData);
 
